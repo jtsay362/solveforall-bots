@@ -19,6 +19,10 @@ gulp.task('babel', function () {
   return gulp.src(SOURCE_PATH)
     .pipe(sourcemaps.init())
     .pipe(babel())
+    .on('error', function (err) {
+      console.log('Babel Error', err);
+      this.emit('end');
+    })
     .pipe(sourcemaps.write('.'))
     .pipe(gulp.dest(OUTPUT_DIR));
 });

@@ -27,30 +27,6 @@ This bot demonstrates many of the core features of Botkit:
 
     token=<MY TOKEN> node slack_bot.js
 
-# USE THE BOT:
-
-  Find your bot inside Slack to send it a direct message.
-
-  Say: "Hello"
-
-  The bot will reply "Hello!"
-
-  Say: "who are you?"
-
-  The bot will tell you its name, where it is running, and for how long.
-
-  Say: "Call me <nickname>"
-
-  Tell the bot your nickname. Now you are friends.
-
-  Say: "who am I?"
-
-  The bot will tell you your nickname, if it knows one for you.
-
-  Say: "shutdown"
-
-  The bot will ask if you are sure, and then shut itself down.
-
   Make sure to invite your bot into other channels using /invite @<my bot>!
 
 # EXTEND THE BOT:
@@ -62,6 +38,7 @@ This bot demonstrates many of the core features of Botkit:
     -> http://howdy.ai/botkit
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+require('es6-promise').polyfill();
 
 const SLACK_API_TOKEN = process.env['SLACK_API_TOKEN'];
 if (!SLACK_API_TOKEN) {
@@ -69,8 +46,12 @@ if (!SLACK_API_TOKEN) {
     process.exit(1);
 }
 
+const BASE_SEARCH_URL = 'https://solveforall.com/service/content_for_text.do';
+const REQUEST_TIMEOUT_MILLIS = 30000;
+
 const Botkit = require('botkit');
 const os = require('os');
+const axios = require('axios');
 const logLevel = parseInt(process.env['LOG_LEVEL'] || '4');
 
 const controller = Botkit.slackbot({
@@ -80,7 +61,6 @@ const controller = Botkit.slackbot({
 const bot = controller.spawn({
   token: SLACK_API_TOKEN
 }).startRTM();
-
 
 controller.hears(['hello', 'hi'], 'direct_message,direct_mention,mention', function(bot, message) {
 
@@ -245,3 +225,73 @@ function formatUptime(uptime) {
     uptime = uptime + ' ' + unit;
     return uptime;
 }
+
+function makeSearchRequest(q, options) {
+  const params = {
+    q,
+    deep: true
+  };
+
+  const axiosOptions = {
+    params,
+    timeout: REQUEST_TIMEOUT_MILLIS
+  };
+
+  return axios.get(BASE_SEARCH_URL, axiosOptions);
+}
+
+function searchResponseToText(response, q) {
+  const { data } = response;
+  const {
+    results
+  } = data;
+
+  const numResults = results.length;
+  if (numResults === 0) {
+    return "Sorry, I couldn't find anything for you. Please try another query.";
+  }
+
+  let s = `I found ${numResults} result`;
+
+  if (numResults > 1) {
+    s += 's';
+  }
+
+  s += ':\n';
+
+  results.forEach(r => {
+    const {
+      context,
+      result
+    } = r;
+
+    s += result.label;
+    s += "\n";
+  });
+
+  s += "\n";
+
+  return s;
+}
+
+controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$"],
+  'direct_message,direct_mention,mention', (bot, message) => {
+  const q = message.match[1].trim();
+
+  bot.reply(message, `Searching for '${q}' ...`);
+
+  const options = {};
+
+  makeSearchRequest(q, options).then(response => {
+    console.log('got response: ');
+    console.dir(JSON.stringify(response.data));
+
+    const text = searchResponseToText(response, q);
+
+    bot.reply(message, text);
+
+  });
+
+  //https://solveforall.com/service/content_for_text.do?q=logitech+mouse+--e+107&client.kind=web&client.src=answers_page&type=answers&use=search&surface=true&deep=true&seq=224111174
+
+});

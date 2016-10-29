@@ -4,8 +4,11 @@
   "description": "Bots for Solve for All",
   "main": "src/slackbot.js",
   "dependencies": {
+    "axios": "^0.15.2",
+    "es6-promise" : "^4.0.5",
     "botkit": "^0.4.0",
-    "request": "^2.67.0"
+    "request": "^2.67.0",
+    "urijs" : "^1.18.2"
   },
   "devDependencies": {
     "babel": "^6.5.2",
