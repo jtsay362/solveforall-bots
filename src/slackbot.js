@@ -52,6 +52,13 @@ const BASE_SEARCH_URL = 'https://solveforall.com/service/content_for_text.do';
 const REQUEST_TIMEOUT_MILLIS = 30000;
 const MAX_ATTACHMENTS_PER_REPLY = 20;
 
+const ATTACHMENT_COLORS = [
+  'good',
+  'warning',
+  'danger',
+  '#439FE0'
+];
+
 const Botkit = require('botkit');
 const os = require('os');
 const axios = require('axios');
@@ -369,7 +376,8 @@ function translateSearchResponse(response, q) {
             ], */
         image_url: imageUrl,
         thumb_url: thumbnailUrl,
-        mrkdwn_in: ['text', 'pretext']
+        mrkdwn_in: ['text', 'pretext'],
+        color: ATTACHMENT_COLORS[attachmentCount % ATTACHMENT_COLORS.length]
       };
 
       if (result.lastUpdatedTimestamp) {
