@@ -40,6 +40,8 @@ This bot demonstrates many of the core features of Botkit:
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 require('es6-promise').polyfill();
 
+const _ = require('lodash');
+
 const SLACK_API_TOKEN = process.env['SLACK_API_TOKEN'];
 if (!SLACK_API_TOKEN) {
     console.log('Error: Specify token in environment');
@@ -48,11 +50,12 @@ if (!SLACK_API_TOKEN) {
 
 const BASE_SEARCH_URL = 'https://solveforall.com/service/content_for_text.do';
 const REQUEST_TIMEOUT_MILLIS = 30000;
+const MAX_ATTACHMENTS_PER_REPLY = 20;
 
 const Botkit = require('botkit');
 const os = require('os');
 const axios = require('axios');
-const logLevel = parseInt(process.env['LOG_LEVEL'] || '4');
+const logLevel = parseInt(process.env['LOG_LEVEL'] || '5');
 
 const controller = Botkit.slackbot({
    logLevel
@@ -61,6 +64,32 @@ const controller = Botkit.slackbot({
 const bot = controller.spawn({
   token: SLACK_API_TOKEN
 }).startRTM();
+
+const HTML_REPLACEMENTS = {
+  '&' : '&amp;',
+  '<' : '&lt;',
+  '>' : '&gt;'
+};
+
+function slackEscape(s) {
+  return (s || '').replace(/[&<>]/g, function (m) {
+    return HTML_REPLACEMENTS[m];
+  });
+}
+
+function htmlToSlackFormat(html) {
+  if (!html) {
+    return '';
+  }
+
+  return html.replace(/<\/?(strong|b)>/g, '*').
+    replace(/<\/?(em|i)>/g, '_').
+    replace(/&nbsp;/g, ' ').
+    replace(/<\/?(br|p)\/?>/g, '\n').
+    replace(/<a\s+[^>]*href\s*=\s*["']([^"']+)["'].*?<\/a\s*>/g, function (m, url) {
+      return url;
+    });
+}
 
 controller.hears(['hello', 'hi'], 'direct_message,direct_mention,mention', function(bot, message) {
 
@@ -240,7 +269,34 @@ function makeSearchRequest(q, options) {
   return axios.get(BASE_SEARCH_URL, axiosOptions);
 }
 
-function searchResponseToText(response, q) {
+
+function makeQuickLinksText(quickLinks) {
+  if (quickLinks.length === 0) {
+    return '';
+  }
+
+  let s = 'Quick Link';
+  if (quickLinks.length > 1) {
+    s += 's';
+  }
+
+  s += ':\n';
+
+  quickLinks.forEach(r => {
+    const {
+      context,
+      result
+    } = r;
+
+    s += slackEscape(result.label) + ' ' +
+      result.uri + '\n'
+  });
+
+  return s;
+}
+
+
+function translateSearchResponse(response, q) {
   const { data } = response;
   const {
     results
@@ -248,7 +304,9 @@ function searchResponseToText(response, q) {
 
   const numResults = results.length;
   if (numResults === 0) {
-    return "Sorry, I couldn't find anything for you. Please try another query.";
+    return {
+      text: "Sorry, I couldn't find anything for you. Please try another query."
+    };
   }
 
   let s = `I found ${numResults} result`;
@@ -259,26 +317,95 @@ function searchResponseToText(response, q) {
 
   s += ':\n';
 
+  let attachmentCount = 0;
+  const attachments = [];
+
+  let quickLinks = [];
+
   results.forEach(r => {
     const {
       context,
       result
     } = r;
 
-    s += result.label;
-    s += "\n";
+
+    const thumbnails = result.thumbnails;
+    let thumbnailUrl;
+    if (thumbnails.length > 0) {
+      const thumbnail = thumbnails[0];
+      thumbnailUrl = thumbnail.mediaUri;
+    }
+
+    const media = result.media;
+    let imageUrl;
+    if (media.length > 0) {
+      const m = media[0];
+      imageUrl = media.mediaUri;
+    }
+
+    const isQuickLink = !thumbnailUrl && !imageUrl &&
+      !result.summaryHtml;
+
+
+    if (isQuickLink) {
+      quickLinks.push(r);
+    } else if (attachmentCount < MAX_ATTACHMENTS_PER_REPLY) {
+      const attachment = {
+        fallback: result.label,
+        //"author_name": "Bobby Tables",
+        //    "author_link": "http://flickr.com/bobby/",
+        //    "author_icon": "http://flickr.com/icons/bobby.jpg",
+        title: result.label,
+        title_link: result.uri,
+        text: slackEscape(_.unescape(
+          htmlToSlackFormat(result.summaryHtml))),
+        /*
+            "fields": [
+                {
+                    "title": "Priority",
+                    "value": "High",
+                    "short": false
+                }
+            ], */
+        image_url: imageUrl,
+        thumb_url: thumbnailUrl,
+        mrkdwn_in: ['text', 'pretext']
+      };
+
+      if (result.lastUpdatedTimestamp) {
+        attachment.ts = result.lastUpdatedTimestamp / 1000;
+      }
+
+      attachments.push(attachment);
+    } else {
+      /*
+
+      s += escape(result.label);
+      s += "\n"; */
+    }
+
+
+
+    attachmentCount++;
   });
 
-  s += "\n";
+  s += '\n';
 
-  return s;
+  if (quickLinks.length > 0) {
+    s += makeQuickLinksText(quickLinks);
+  }
+
+  return {
+    text: s,
+    attachments
+  };
 }
 
 controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$"],
   'direct_message,direct_mention,mention', (bot, message) => {
   const q = message.match[1].trim();
 
-  bot.reply(message, `Searching for '${q}' ...`);
+  bot.reply(message, `Searching for '${slackEscape(q)}' ...`);
 
   const options = {};
 
@@ -286,9 +413,7 @@ controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$"],
     console.log('got response: ');
     console.dir(JSON.stringify(response.data));
 
-    const text = searchResponseToText(response, q);
-
-    bot.reply(message, text);
+    bot.reply(message, translateSearchResponse(response, q));
 
   });
 
