@@ -41,6 +41,8 @@ This bot demonstrates many of the core features of Botkit:
 require('es6-promise').polyfill();
 
 const _ = require('lodash');
+const URI = require('urijs');
+const sanitizeHtml = require('sanitize-html');
 
 const SLACK_API_TOKEN = process.env['SLACK_API_TOKEN'];
 if (!SLACK_API_TOKEN) {
@@ -89,12 +91,14 @@ function htmlToSlackFormat(html) {
     return '';
   }
 
-  return html.replace(/<\/?(strong|b)>/g, '*').
+  return sanitizeHtml(html.replace(/<\/?(strong|b)>/g, '*').
     replace(/<\/?(em|i)>/g, '_').
     replace(/&nbsp;/g, ' ').
     replace(/<\/?(br|p)\/?>/g, '\n').
     replace(/<a\s+[^>]*href\s*=\s*["']([^"']+)["'].*?<\/a\s*>/g, function (m, url) {
       return url;
+    }), {
+      allowedTags: ['img']
     });
 }
 
@@ -264,8 +268,9 @@ function formatUptime(uptime) {
 
 function makeSearchRequest(q, options) {
   const params = {
-    q,
-    deep: true
+    q
+    /*,
+    deep: true */
   };
 
   const axiosOptions = {
@@ -351,21 +356,30 @@ function translateSearchResponse(response, q) {
     }
 
     const isQuickLink = !thumbnailUrl && !imageUrl &&
-      !result.summaryHtml;
-
+      !result.summaryHtml && !result.content;
 
     if (isQuickLink) {
       quickLinks.push(r);
     } else if (attachmentCount < MAX_ATTACHMENTS_PER_REPLY) {
+      let text;
+
+      if (result.content) {
+        if (result.contentType === 'text/html') {
+          text = _.unescape(htmlToSlackFormat(result.content));
+        } else {
+          text = result.content;
+        }
+      } else {
+        text = _.unescape(htmlToSlackFormat(result.summaryHtml));
+      }
+
       const attachment = {
         fallback: result.label,
         //"author_name": "Bobby Tables",
         //    "author_link": "http://flickr.com/bobby/",
         //    "author_icon": "http://flickr.com/icons/bobby.jpg",
         title: result.label,
-        title_link: result.uri,
-        text: slackEscape(_.unescape(
-          htmlToSlackFormat(result.summaryHtml))),
+        text: slackEscape(text),
         /*
             "fields": [
                 {
@@ -377,8 +391,15 @@ function translateSearchResponse(response, q) {
         image_url: imageUrl,
         thumb_url: thumbnailUrl,
         mrkdwn_in: ['text', 'pretext'],
+        footer: context.feedTitle || context.generatorName,
         color: ATTACHMENT_COLORS[attachmentCount % ATTACHMENT_COLORS.length]
       };
+
+      if (result.uri) {
+        attachment.title_link = result.uri;
+        attachment.author_icon = result.iconUrl;
+        attachment.author_name = URI(result.uri).hostname();
+      }
 
       if (result.lastUpdatedTimestamp) {
         attachment.ts = result.lastUpdatedTimestamp / 1000;
@@ -409,7 +430,7 @@ function translateSearchResponse(response, q) {
   };
 }
 
-controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$"],
+controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$", "^\s*([?\/>].*)"],
   'direct_message,direct_mention,mention', (bot, message) => {
   const q = message.match[1].trim();
 
@@ -427,4 +448,8 @@ controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$"],
 
   //https://solveforall.com/service/content_for_text.do?q=logitech+mouse+--e+107&client.kind=web&client.src=answers_page&type=answers&use=search&surface=true&deep=true&seq=224111174
 
+});
+
+controller.hears([".+"], 'direct_message,direct_mention,mention', (bot, message) => {
+  bot.reply(message, "Sorry, I don't understand that command. Try prefixing your search query with *s*.");
 });
