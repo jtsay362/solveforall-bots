@@ -81,9 +81,21 @@ const HTML_REPLACEMENTS = {
   '>' : '&gt;'
 };
 
+const ESCAPED_HTML_REPLACEMENTS = {
+  'amp' : '&',
+  'lt' : '<',
+  'gt' : '>'
+};
+
 function slackEscape(s) {
   return (s || '').replace(/[&<>]/g, function (m) {
     return HTML_REPLACEMENTS[m];
+  });
+}
+
+function slackUnescape(s) {
+  return (s || '').replace(/&(amp|lt|gt);/g, function (m, code) {
+    return ESCAPED_HTML_REPLACEMENTS[code];
   });
 }
 
@@ -305,7 +317,7 @@ function makeQuickLinksText(quickLinks) {
       result
     } = r;
 
-    s += slackEscape(result.label) + ' ' +
+    s += '*' + slackEscape(result.label) + '* ' +
       result.uri + '\n'
   });
 
@@ -435,9 +447,11 @@ function translateSearchResponse(response, q) {
   };
 }
 
-controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$", "^\s*([?\/>].*)"],
+controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$", "^\s*((?:[?\/]|&gt;).*)"],
   'direct_message,direct_mention,mention', (bot, message) => {
-  const q = message.match[1].trim();
+  const q = slackUnescape(message.match[1]).trim();
+
+  console.log('q = ' + q);
 
   bot.reply(message, `Searching for '${slackEscape(q)}' ...`);
 
