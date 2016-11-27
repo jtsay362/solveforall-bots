@@ -50,7 +50,8 @@ if (!SLACK_API_TOKEN) {
     process.exit(1);
 }
 
-const BASE_SEARCH_URL = 'https://solveforall.com/service/content_for_text.do';
+const BASE_SEARCH_URL = 'https://solveforall-search-or-solve-v1.p.mashape.com/service/content_for_text.do';
+const MASHAPE_API_KEY = process.env['MASHAPE_API_KEY'];
 const REQUEST_TIMEOUT_MILLIS = 30000;
 const MAX_ATTACHMENTS_PER_REPLY = 20;
 
@@ -275,7 +276,11 @@ function makeSearchRequest(q, options) {
 
   const axiosOptions = {
     params,
-    timeout: REQUEST_TIMEOUT_MILLIS
+    timeout: REQUEST_TIMEOUT_MILLIS,
+    headers: {
+      'Accept': 'application/json',
+      'X-Mashape-Key' : MASHAPE_API_KEY
+    }
   };
 
   return axios.get(BASE_SEARCH_URL, axiosOptions);
@@ -444,6 +449,21 @@ controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$", "^\s
 
     bot.reply(message, translateSearchResponse(response, q));
 
+  }).catch(error => {
+    if (error.response) {
+      // The request was made, but the server responded with a status code
+      // that falls out of the range of 2xx
+
+      console.log('Got bad response: ' + error.response.status);
+      console.log('Response body: ' + error.response.data);
+      console.log('Response headers: ' + error.response.headers);
+      bot.reply(message, 'I am having trouble getting a response from Solve for All. Please contact my master.');
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.log('Error', error.message);
+      bot.reply(message, 'Doh! An internal error occurred. Please contact my master.');
+    }
+    console.log(error.config);
   });
 
   //https://solveforall.com/service/content_for_text.do?q=logitech+mouse+--e+107&client.kind=web&client.src=answers_page&type=answers&use=search&surface=true&deep=true&seq=224111174
