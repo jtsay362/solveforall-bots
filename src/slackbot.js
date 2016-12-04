@@ -447,7 +447,7 @@ function translateSearchResponse(response, q) {
   };
 }
 
-controller.hears(["^\s*s(?:earch|olve)?\\s*(?:for\\s*)?['\"]*(.*?)['\"]*$", "^\s*((?:[?\/]|&gt;).*)"],
+controller.hears(["(?:^|\\s|\\b)s(?:earch|olve)?\\s*(?:for\\s*)?['\"]?(.*?)['\"]?\s*$", "^\s*((?:[?\/]|&gt;).*)"],
   'direct_message,direct_mention,mention', (bot, message) => {
   const q = slackUnescape(message.match[1]).trim();
 
