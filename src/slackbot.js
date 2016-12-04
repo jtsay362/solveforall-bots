@@ -68,7 +68,8 @@ const axios = require('axios');
 const logLevel = parseInt(process.env['LOG_LEVEL'] || '5');
 
 const controller = Botkit.slackbot({
-   logLevel
+  stats_optout: true,
+  logLevel
 });
 
 const bot = controller.spawn({
